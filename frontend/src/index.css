@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #0a0e1a;
+  --color-bg-secondary: #0f1629;
+  --color-bg-panel: #111827;
+  --color-bg-card: #1a2035;
+  --color-border: #1e2d45;
+  --color-border-bright: #2a3f60;
+
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #8899aa;
+  --color-text-dim: #8a8a8a;
+
+  --color-accent-blue: #3b82f6;
+  --color-accent-cyan: #06b6d4;
+  --color-accent-green: #10b981;
+  --color-accent-red: #ef4444;
+  --color-accent-orange: #f97316;
+  --color-accent-yellow: #eab308;
+
+  --color-ema8: #3b82f6;
+  --color-ema21: #f97316;
+  --color-vwap: #eab308;
+
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  --font-display: "Inter", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-bright); border-radius: 2px; }
+
+/* Numeric displays */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.positive { color: var(--color-accent-green); }
+.negative { color: var(--color-accent-red); }
