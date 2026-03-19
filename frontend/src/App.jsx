@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import TradingChart from './components/TradingChart.jsx';
 import AccountSidebar from './components/AccountSidebar.jsx';
 import { AccountProvider } from './context/AccountContext.jsx';
+import { apiFetch } from './utils/api.js';
 
 export default function App() {
   const [symbol,    setSymbol]    = useState('BTC-USDT');
@@ -11,7 +12,7 @@ export default function App() {
 
   // Fetch current mode on mount
   useEffect(() => {
-    fetch('/api/config/mode')
+    apiFetch('/api/config/mode')
       .then((r) => r.json())
       .then((j) => { if (j.ok) setMode(j.mode); })
       .catch(() => {});
@@ -27,7 +28,7 @@ export default function App() {
 
     setSwitching(true);
     try {
-      const res  = await fetch('/api/config/mode', {
+      const res  = await apiFetch('/api/config/mode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: newMode }),

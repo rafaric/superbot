@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAccount } from '../context/AccountContext.jsx';
+import { apiFetch } from '../utils/api.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(v, d = 2) {
@@ -52,7 +53,7 @@ function NewOrderForm({ symbol, markPrice, onSubmitReady }) {
 
   // Load saved values from backend on mount
   useEffect(() => {
-    fetch('/api/config/trading')
+    apiFetch('/api/config/trading')
       .then((r) => r.json())
       .then((j) => {
         if (j.ok) {
@@ -68,7 +69,7 @@ function NewOrderForm({ symbol, markPrice, onSubmitReady }) {
   const saveConfig = useCallback(async () => {
     setSaving(true); setSaveStatus(null);
     try {
-      const res  = await fetch('/api/config/trading', {
+      const res  = await apiFetch('/api/config/trading', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pct, leverage: parseInt(leverage) }),
@@ -98,7 +99,7 @@ function NewOrderForm({ symbol, markPrice, onSubmitReady }) {
   useEffect(() => {
     if (!markPrice || !symbol) return;
     const timer = setTimeout(() => {
-      fetch(`/api/orders/size?symbol=${symbol}&price=${markPrice}&pct=${pct}&leverage=${leverage}`)
+      apiFetch(`/api/orders/size?symbol=${symbol}&price=${markPrice}&pct=${pct}&leverage=${leverage}`)
         .then((r) => r.json())
         .then((json) => setSizePreview(json))
         .catch(() => setSizePreview(null));
@@ -119,7 +120,7 @@ function NewOrderForm({ symbol, markPrice, onSubmitReady }) {
 
     try {
       // Set leverage
-      const levRes = await fetch('/api/orders/leverage', {
+      const levRes = await apiFetch('/api/orders/leverage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, leverage: parseInt(leverage) }),
@@ -134,7 +135,7 @@ function NewOrderForm({ symbol, markPrice, onSubmitReady }) {
       if (useSLTP && stopLoss)   body.stopLoss   = parseFloat(stopLoss);
       if (useSLTP && takeProfit) body.takeProfit = parseFloat(takeProfit);
 
-      const res  = await fetch('/api/orders/market', {
+      const res  = await apiFetch('/api/orders/market', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -297,7 +298,7 @@ function SLTPEditor({ position }) {
       const body = { symbol: position.symbol };
       if (sl) body.stopLoss   = parseFloat(sl);
       if (tp) body.takeProfit = parseFloat(tp);
-      const res  = await fetch('/api/orders/sltp', {
+      const res  = await apiFetch('/api/orders/sltp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -354,7 +355,7 @@ function PositionCard({ position }) {
     setClosing(true); setStatus(null);
     try {
       // Use positionSide directly (hedge mode) — avoids sign inference errors
-      const res  = await fetch('/api/orders/close', {
+      const res  = await apiFetch('/api/orders/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

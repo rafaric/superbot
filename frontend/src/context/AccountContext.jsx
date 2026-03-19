@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { apiFetch } from '../utils/api.js';
 
 const AccountContext = createContext(null);
 
@@ -23,9 +24,9 @@ export function AccountProvider({ children }) {
   const refresh = useCallback(async () => {
     try {
       const [balRes, posRes, incRes] = await Promise.all([
-        fetch('/api/account/balance'),
-        fetch('/api/account/positions'),
-        fetch('/api/account/income?limit=100'),
+        apiFetch('/api/account/balance'),
+        apiFetch('/api/account/positions'),
+        apiFetch('/api/account/income?limit=100'),
       ]);
       const [b, p, i] = await Promise.all([balRes.json(), posRes.json(), incRes.json()]);
       if (b.ok) setBalance(normalizeBalance(b.data));
@@ -39,13 +40,14 @@ export function AccountProvider({ children }) {
 
   // WS connection — receives ACCOUNT_SNAPSHOT every 3s from backend poller
   const connectWS = useCallback(() => {
-    const port = import.meta.env.VITE_BACKEND_PORT || 3001;
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const wsUrl = backendUrl.replace(/^http/, 'ws');
     let cancelled = false;
 
     const timer = setTimeout(() => {
       if (cancelled) return;
 
-      const ws = new WebSocket(`ws://localhost:${port}/ws/account`);
+      const ws = new WebSocket(`${wsUrl}/ws/account`);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {

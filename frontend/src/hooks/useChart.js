@@ -7,6 +7,7 @@ import {
   createSeriesMarkers,
 } from 'lightweight-charts';
 import { updateEMA, updateVWAP, isNewDay, intervalToSeconds } from '../utils/indicators.js';
+import { apiFetch } from '../utils/api.js';
 
 const BUFFER_MAX    = 1000;
 const SCROLL_THRESHOLD = 20;
@@ -194,7 +195,7 @@ export function useChart(containerRef, symbol, interval, onPriceUpdate) {
     // Refresh 15m filter data every 15 minutes independently of chart interval
     const refreshFilters = async () => {
       try {
-        const res  = await fetch(`/api/market/klines?symbol=${symbol}&interval=15m&limit=50`);
+        const res  = await apiFetch(`/api/market/klines?symbol=${symbol}&interval=15m&limit=50`);
         const json = await res.json();
         if (json.seeds) {
           filterRef.current = {
@@ -218,7 +219,7 @@ export function useChart(containerRef, symbol, interval, onPriceUpdate) {
   // ─── Initial data load ────────────────────────────────────────────────────
   const loadInitialData = useCallback(async () => {
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/market/klines?symbol=${symbol}&interval=${interval}&limit=${HISTORY_CHUNK}`
       );
       const { candles, indicators, seeds } = await res.json();
@@ -270,7 +271,7 @@ export function useChart(containerRef, symbol, interval, onPriceUpdate) {
       const intervalSec = intervalToSeconds(interval);
       const endTime    = (oldest.time - intervalSec) * 1000;
 
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/market/klines?symbol=${symbol}&interval=${interval}&limit=${HISTORY_CHUNK}&endTime=${endTime}`
       );
       const { candles } = await res.json();
@@ -301,12 +302,13 @@ export function useChart(containerRef, symbol, interval, onPriceUpdate) {
   // ─── WebSocket ────────────────────────────────────────────────────────────
   const connectWebSocket = useCallback(() => {
     disconnectWebSocket();
-    const port = import.meta.env.VITE_BACKEND_PORT || 3001;
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const wsUrl = backendUrl.replace(/^http/, 'ws');
     let cancelled = false;
 
     const timer = setTimeout(() => {
       if (cancelled) return;
-      const ws = new WebSocket(`ws://localhost:${port}/ws/ticks`);
+      const ws = new WebSocket(`${wsUrl}/ws/ticks`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -437,7 +439,7 @@ export function useChart(containerRef, symbol, interval, onPriceUpdate) {
     // Send Telegram alert — only once per signal (deduplicated by time)
     if ((newBuy || newSell) && updatedCandle.time !== lastSignalNotifiedRef.current) {
       lastSignalNotifiedRef.current = updatedCandle.time;
-      fetch('/api/signals/alert', {
+      apiFetch('/api/signals/alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -471,7 +473,7 @@ export function useChart(containerRef, symbol, interval, onPriceUpdate) {
     // ── Push indicator state to backend (for Telegram /indicadores) ────────
     // Throttled: only on kline ticks with real volume to avoid flooding
     if (updatedCandle.volume > 0) {
-      fetch('/api/market/indicators', {
+      apiFetch('/api/market/indicators', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
