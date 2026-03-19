@@ -61,11 +61,114 @@ Acceder a: http://localhost:5173
 
 ---
 
-## Cambiar a Producción
+## Deploy a Producción
 
-En `backend/.env`:
+### Infraestructura
+
+- **Backend**: AWS EC2 t2.micro (Ubuntu 24.04) + PM2 + Nginx + Let's Encrypt
+- **Frontend**: Vercel
+- **Dominio**: Namecheap → DNS apuntando a la IP de EC2
+
+### 1. EC2 — Configuración inicial
+
+```bash
+# Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# PM2 + Nginx
+sudo npm install -g pm2
+sudo apt install -y nginx
+
+# Bun
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
+```
+
+### 2. EC2 — Backend
+
+```bash
+git clone https://github.com/tu-usuario/superbot.git
+cd superbot/backend
+bun install
+cp .env.example .env
+nano .env  # completar con keys reales
+```
+
+`backend/.env` en producción:
+
 ```env
 BINGX_BASE_URL=https://open-api.bingx.com
+BINGX_WS_URL=wss://open-api-ws.bingx.com/market
+BINGX_API_KEY=tu_api_key
+BINGX_API_SECRET=tu_api_secret
+
+PORT=3001
+FRONTEND_URL=http://localhost:5173,https://tu-app.vercel.app
+
+TRADING_PAIRS=BTC-USDT,ETH-USDT,SOL-USDT
+
+TELEGRAM_BOT_TOKEN=tu_token
+TELEGRAM_CHAT_ID=tu_chat_id
+```
+
+```bash
+pm2 start src/index.js --name superbot
+pm2 save
+pm2 startup  # ejecutar el comando que genera
+```
+
+### 3. EC2 — Nginx + HTTPS
+
+```bash
+sudo nano /etc/nginx/sites-available/superbot
+```
+
+```nginx
+server {
+    listen 80;
+    server_name tu-dominio.xyz www.tu-dominio.xyz;
+
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/superbot /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# HTTPS con Let's Encrypt (se renueva automáticamente)
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d tu-dominio.xyz -d www.tu-dominio.xyz
+```
+
+### 4. Vercel — Frontend
+
+1. Importar repo en [vercel.com](https://vercel.com)
+2. Root Directory: `frontend` — Build Command: `bun run build` — Output: `dist`
+3. Agregar variable de entorno:
+   ```
+   VITE_BACKEND_URL = https://tu-dominio.xyz
+   ```
+
+### Actualizar en producción
+
+```bash
+# Mac
+git add . && git commit -m "..." && git push
+# Vercel se actualiza automáticamente
+
+# EC2
+cd ~/superbot/backend
+git pull
+pm2 restart superbot
 ```
 
 ---
