@@ -38,8 +38,21 @@ router.get('/positions', async (req, res) => {
  */
 router.get('/income', async (req, res) => {
   try {
-    const { limit = 50 } = req.query;
-    const data = await getIncome({ incomeType: 'REALIZED_PNL', limit: Number(limit) });
+    const { limit = 50, incomeType } = req.query;
+    // If no type specified, fetch both REALIZED_PNL and FEE and merge
+    let data;
+    if (incomeType) {
+      data = await getIncome({ incomeType, limit: Number(limit) });
+    } else {
+      const [pnl, fees] = await Promise.all([
+        getIncome({ incomeType: 'REALIZED_PNL', limit: Number(limit) }).catch(() => []),
+        getIncome({ incomeType: 'FEE',          limit: Number(limit) }).catch(() => []),
+      ]);
+      // Merge and sort by time descending
+      data = [...(pnl ?? []), ...(fees ?? [])]
+        .sort((a, b) => Number(b.time ?? b.timestamp ?? 0) - Number(a.time ?? a.timestamp ?? 0))
+        .slice(0, Number(limit));
+    }
     res.json({ ok: true, data });
   } catch (err) {
     console.error('[Account] income error:', err.message);

@@ -3,9 +3,10 @@ import { calculateEMA, calculateVWAP, calculateRSI, calculateRelativeVolume, cal
 import { sendWithButtons, esc, isEnabled } from './telegram.js';
 import { calcQuantityFromPct } from './sizeCalculator.js';
 import { TRADING_PAIRS } from '../index.js';
+import { getActivePairs } from './autoCalibrator.js';
 
-const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? 5 * 60 * 1000);
-const SCAN_TIMEFRAME   = process.env.SCAN_TIMEFRAME ?? '5m';
+const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? 15 * 60 * 1000); // default 15m
+const SCAN_TIMEFRAME   = process.env.SCAN_TIMEFRAME ?? '15m';
 const SIGNAL_PCT       = parseFloat(process.env.SIGNAL_PCT ?? 10);
 
 const lastSignal = new Map();
@@ -24,18 +25,28 @@ export function stopScanner() {
 }
 
 async function runScan() {
-  const timestamp = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-  console.log(`[Scanner] Running scan at ${timestamp} — ${TRADING_PAIRS.length} pairs`);
+  const timestamp  = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
+  const activePairs = getActivePairs();
+
+  // Use calibrated pairs if available, otherwise fall back to all TRADING_PAIRS with default timeframe
+  const pairsToScan = activePairs.length > 0
+    ? activePairs
+    : TRADING_PAIRS.map((symbol) => ({ symbol, interval: SCAN_TIMEFRAME }));
+
+  console.log(`[Scanner] Running scan at ${timestamp} — ${pairsToScan.length} pairs`);
+
   const CONCURRENCY = 4;
-  for (let i = 0; i < TRADING_PAIRS.length; i += CONCURRENCY) {
-    await Promise.all(TRADING_PAIRS.slice(i, i + CONCURRENCY).map(scanPair));
-    if (i + CONCURRENCY < TRADING_PAIRS.length) await sleep(500);
+  for (let i = 0; i < pairsToScan.length; i += CONCURRENCY) {
+    await Promise.all(pairsToScan.slice(i, i + CONCURRENCY).map(({ symbol, interval }) =>
+      scanPair(symbol, interval)
+    ));
+    if (i + CONCURRENCY < pairsToScan.length) await sleep(500);
   }
 }
 
-async function scanPair(symbol) {
+async function scanPair(symbol, interval = SCAN_TIMEFRAME) {
   try {
-    const candles15m = await getKlines({ symbol, interval: '15m', limit: 200 });
+    const candles15m = await getKlines({ symbol, interval, limit: 200 });
     if (candles15m.length < 22) return;
 
     const ema8Series   = calculateEMA(candles15m, 8);
@@ -99,6 +110,7 @@ async function scanPair(symbol) {
       symbol, type: newBuy ? 'BUY' : 'SELL',
       candle: last, ema8, ema21, vwap, rsi, relVol,
       orbHigh: orb?.orbHigh, orbLow: orb?.orbLow,
+      interval,
     });
 
   } catch (err) {
@@ -146,7 +158,7 @@ async function sendSignalAlert({ symbol, type, candle, ema8, ema21, vwap, rsi, r
   const msg = [
     `${emoji} <b>[SCANNER] Señal de ${esc(action)}</b>`,
     `─────────────────────`,
-    `Par: <b>${esc(symbol)}</b> | ${esc(SCAN_TIMEFRAME)} | ${esc(now)}`,
+    `Par: <b>${esc(symbol)}</b> | ${esc(interval)} | ${esc(now)}`,
     `Dirección: <b>${esc(dir)}</b>`,
     ``,
     `💵 Precio: <code>${esc(price.toFixed(2))}</code>`,

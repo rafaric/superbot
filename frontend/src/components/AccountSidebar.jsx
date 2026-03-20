@@ -1,5 +1,7 @@
+import React from 'react';
 import { useAccount } from '../context/AccountContext.jsx';
 import OrderPanel from './OrderPanel.jsx';
+import TradeHistory from './TradeHistory.jsx';
 
 function fmt(value, decimals = 2) {
   if (value == null || isNaN(value)) return '—';
@@ -14,16 +16,16 @@ function pnlClass(value) {
 
 function StatCard({ label, value, sub, valueClass = 'text-slate-100' }) {
   return (
-    <div className="bg-bg-panel border border-border rounded-lg p-3 ">
-      <p className="text-text-dim text-[10px] uppercase tracking-widest mb-1 p-1">{label}</p>
-      <p className={`num text-lg font-semibold leading-none ${valueClass} p-1`}>{value}</p>
-      {sub && <p className="text-text-dim text-[10px] mt-1 num p-1">{sub}</p>}
+    <div className="bg-[#111827] border border-[#1e2d45] rounded-lg p-3">
+      <p className="text-[#4a5568] text-[10px] uppercase tracking-widest mb-1">{label}</p>
+      <p className={`num text-lg font-semibold leading-none ${valueClass}`}>{value}</p>
+      {sub && <p className="text-[#4a5568] text-[10px] mt-1 num">{sub}</p>}
     </div>
   );
 }
 
 function Skeleton({ className = '' }) {
-  return <div className={`bg-bg-card rounded animate-pulse ${className}`} />;
+  return <div className={`bg-[#1a2035] rounded animate-pulse ${className}`} />;
 }
 
 export default function AccountSidebar({ symbol, markPrice }) {
@@ -31,17 +33,37 @@ export default function AccountSidebar({ symbol, markPrice }) {
     balance, positions, realizedPnl, totalUnrealizedPnl,
     loading, lastUpdated, refresh,
   } = useAccount();
+  const [activeTab, setActiveTab] = React.useState('account');
 
   return (
-    <aside className="w-72 flex flex-col h-full bg-bg-primary border-l border-border overflow-y-auto">
+    <aside className="w-72 flex flex-col h-full bg-[#0a0e1a] border-l border-[#1e2d45] overflow-y-auto">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <span className="text-text-secondary text-xs font-medium tracking-widest uppercase">Cuenta</span>
-        <button onClick={refresh} className="text-text-dim hover:text-text-secondary transition-colors text-xs" title="Actualizar">↻</button>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e2d45] shrink-0">
+        <span className="text-[#8899aa] text-xs font-medium tracking-widest uppercase">Cuenta</span>
+        <button onClick={refresh} className="text-[#4a5568] hover:text-[#8899aa] transition-colors text-xs" title="Actualizar">↻</button>
       </div>
 
-      <div className="flex-1 p-3 space-y-3">
+      {/* Tab bar */}
+      <div className="flex border-b border-[#1e2d45] shrink-0">
+        {[
+          { key: 'account',  label: 'Balance' },
+          { key: 'orders',   label: 'Órdenes' },
+          { key: 'history',  label: 'Historial' },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={`flex-1 py-2 text-[10px] font-medium transition-colors ${
+              activeTab === key
+                ? 'text-[#3b82f6] border-b-2 border-[#3b82f6] -mb-px'
+                : 'text-[#4a5568] hover:text-[#8899aa]'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+
+      {activeTab === 'history' && <div className="flex-1 overflow-hidden"><TradeHistory /></div>}
+
+      {activeTab !== 'history' && <div className="flex-1 p-3 space-y-3">
 
         {/* Balance */}
         {loading ? <Skeleton className="h-16" /> : (
@@ -64,12 +86,12 @@ export default function AccountSidebar({ symbol, markPrice }) {
 
         {/* Margin bar */}
         {!loading && balance && (
-          <div className="bg-bg-panel border border-border rounded-lg p-3">
-            <div className="flex justify-between text-[10px] text-text-dim mb-1.5">
+          <div className="bg-[#111827] border border-[#1e2d45] rounded-lg p-3">
+            <div className="flex justify-between text-[10px] text-[#4a5568] mb-1.5">
               <span className="uppercase tracking-widest">Margen</span>
               <span className="num">{fmt(balance.usedMargin)} / {fmt(balance.totalWalletBalance)} USDT</span>
             </div>
-            <div className="h-1 bg-border rounded-full overflow-hidden">
+            <div className="h-1 bg-[#1e2d45] rounded-full overflow-hidden">
               <div
                 className="h-full bg-[#3b82f6] rounded-full transition-all duration-500"
                 style={{ width: balance.totalWalletBalance > 0 ? `${Math.min((balance.usedMargin / balance.totalWalletBalance) * 100, 100)}%` : '0%' }}
@@ -78,15 +100,15 @@ export default function AccountSidebar({ symbol, markPrice }) {
           </div>
         )}
 
-      </div>
+      </div>}
 
-      {/* Order panel */}
-      <OrderPanel symbol={symbol} markPrice={markPrice} />
+      {/* Order panel — only on orders tab */}
+      {activeTab === 'orders' && <OrderPanel symbol={symbol} markPrice={markPrice} />}
 
       {/* Footer */}
-      {lastUpdated && (
-        <div className="px-4 py-2 border-t border-border shrink-0">
-          <p className="text-text-dim text-[10px] num">
+      {activeTab !== 'history' && lastUpdated && (
+        <div className="px-4 py-2 border-t border-[#1e2d45] shrink-0">
+          <p className="text-[#4a5568] text-[10px] num">
             Actualizado: {new Date(lastUpdated).toLocaleTimeString('es-AR')}
           </p>
         </div>

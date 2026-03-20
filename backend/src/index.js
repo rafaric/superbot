@@ -5,16 +5,19 @@ import http from 'http';
 import marketRouter  from './routes/market.js';
 import accountRouter from './routes/account.js';
 import ordersRouter  from './routes/orders.js';
-import signalsRouter from './routes/signals.js';
+import signalsRouter  from './routes/signals.js';
+import backtestRouter from './routes/backtest.js';
 import configRouter  from './routes/config.js';
 import { setupWSRouter }     from './ws/wsRouter.js';
-import { accountWSManager }  from './ws/accountStream.js';
+import { accountWSManager }  from './services/accountStream.js';
 import { initBot, setCloseHandler } from './services/telegram.js';
 import { buildCommandHandlers } from './services/telegramCommands.js';
 import { checkPnLAlerts }       from './services/telegramNotifier.js';
 import { placeOrderFromSignal }  from './services/signalTrader.js';
 import { closePositionFromTelegram } from './services/telegramTrader.js';
 import { startScanner }         from './services/scanner.js';
+import { runCalibration, scheduleDailyCalibration } from './services/autoCalibrator.js';
+
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -34,19 +37,14 @@ export const TRADING_PAIRS = (process.env.TRADING_PAIRS ?? 'BTC-USDT')
     return s;
   });
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',').map(s => s.trim());
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) cb(null, true);
-    else cb(new Error('Not allowed by CORS'));
-  },
-}));
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
 app.use(express.json());
 
 app.use('/api/market',  marketRouter);
 app.use('/api/account', accountRouter);
 app.use('/api/orders',  ordersRouter);
-app.use('/api/signals', signalsRouter);
+app.use('/api/signals',  signalsRouter);
+app.use('/api/backtest', backtestRouter);
 app.use('/api/config',  configRouter);
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: process.env.BINGX_BASE_URL }));
 
@@ -166,9 +164,14 @@ const indicatorsGetter = (symbol) => indicatorState.get(symbol.toUpperCase()) ??
 initBot(buildCommandHandlers(indicatorsGetter), placeOrderFromSignal);
 setCloseHandler(closePositionFromTelegram);
 
-// ─── Autonomous scanner ───────────────────────────────────────────────────────
-// Starts after a short delay to let the bot initialize first
-setTimeout(startScanner, 3000);
+// ─── Auto-calibration + Scanner ──────────────────────────────────────────────
+// On startup: calibrate all pairs, then start scanner with active combinations.
+// Daily re-calibration at 3am Argentina time.
+setTimeout(async () => {
+  await runCalibration(TRADING_PAIRS);
+  startScanner();
+  scheduleDailyCalibration(TRADING_PAIRS);
+}, 3000);
 
 server.listen(PORT, () => {
   console.log(`\n🚀 Backend running on http://localhost:${PORT}`);

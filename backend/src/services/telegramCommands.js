@@ -2,6 +2,7 @@ import { send, esc } from './telegram.js';
 import { getBalance, getPositions, getIncome } from './bingx.js';
 import { startScanner, stopScanner } from './scanner.js';
 import { sendCloseMenu } from './telegramTrader.js';
+import { runCalibration, getActivePairs, getLastCalibration } from './autoCalibrator.js';
 import { TRADING_PAIRS } from '../index.js';
 
 export function buildCommandHandlers(indicatorsGetter) {
@@ -17,7 +18,9 @@ export function buildCommandHandlers(indicatorsGetter) {
         `/resumen - Resumen completo\n` +
         `/indicadores [PAR] - Estado de indicadores\n` +
         `/scanner - Estado del scanner autónomo\n` +
-        `/cerrar - Cerrar posición abierta`
+        `/cerrar - Cerrar posición abierta\n` +
+        `/calibrar - Recalibrar pares activos\n` +
+        `/activos - Ver pares activos`
       );
     },
 
@@ -107,6 +110,31 @@ export function buildCommandHandlers(indicatorsGetter) {
         `─────────────────────\n` +
         `Señal: <b>${signal}</b>`
       );
+    },
+
+    '/calibrar': async () => {
+      send('⏳ Iniciando calibración de todos los pares...');
+      try {
+        await runCalibration(TRADING_PAIRS);
+      } catch (err) {
+        send(`❌ Error en calibración: ${esc(err.message)}`);
+      }
+    },
+
+    '/activos': async () => {
+      const pairs = getActivePairs();
+      const last  = getLastCalibration();
+      if (!pairs || pairs.length === 0) {
+        send('📊 Sin calibración aún o ningún par rentable. Usá /calibrar para correr el análisis.');
+        return;
+      }
+      const lines = [
+        `✅ <b>Pares activos (${pairs.length})</b>`,
+        last ? `Última calibración: <code>${new Date(last).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</code>` : '',
+        `─────────────────────`,
+        ...pairs.map((r) => `• <b>${esc(r.symbol)}</b> ${r.interval} — PnL: <code>${r.pnl >= 0 ? '+' : ''}${r.pnl.toFixed(2)}%</code> WR: <code>${r.winRate}%</code>`),
+      ].filter(Boolean);
+      send(lines.join('\n'));
     },
 
     '/cerrar': async () => {
