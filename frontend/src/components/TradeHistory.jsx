@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../utils/api.js';
 
 function fmt(v, d = 2) {
   if (v == null || isNaN(v)) return '—';
@@ -23,7 +24,7 @@ export default function TradeHistory() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res  = await fetch(`/api/account/income?limit=50`);
+      const res  = await apiFetch(`/api/account/income?limit=50`);
       const json = await res.json();
       if (json.ok) setTrades(json.data ?? []);
       else setError(json.error);
