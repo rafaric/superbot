@@ -3,6 +3,7 @@ import TradingChart   from './components/TradingChart.jsx';
 import BacktestPanel from './components/BacktestPanel.jsx';
 import AccountSidebar from './components/AccountSidebar.jsx';
 import { AccountProvider } from './context/AccountContext.jsx';
+import { apiFetch } from './utils/api.js';
 
 export default function App() {
   const [symbol,    setSymbol]    = useState('BTC-USDT');
