@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useChart } from '../hooks/useChart.js';
+import { apiFetch } from '../utils/api.js';
 
 const INTERVALS = [
   { label: '1m', value: '1m' }, { label: '3m',  value: '3m'  },
@@ -36,7 +37,7 @@ export default function TradingChart({ onSymbolChange, onPriceUpdate, onPairsLoa
 
   // Load trading pairs from backend on mount
   useEffect(() => {
-    fetch('/api/config/pairs')
+    apiFetch('/api/config/pairs')
       .then((r) => r.json())
       .then(({ pairs: p }) => {
         if (p?.length) {

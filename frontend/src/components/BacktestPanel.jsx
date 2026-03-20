@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { apiFetch } from '../utils/api.js';
 
 function fmt(v, d = 2) {
   if (v == null || isNaN(v)) return '—';
@@ -55,7 +56,7 @@ export default function BacktestPanel({ symbol, tradingPairs = [] }) {
   const runBacktest = useCallback(async () => {
     setLoading(true); setResult(null); setAnalysis(null);
     try {
-      const res  = await fetch('/api/backtest/run', {
+      const res  = await apiFetch('/api/backtest/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params),
@@ -73,7 +74,7 @@ export default function BacktestPanel({ symbol, tradingPairs = [] }) {
   const runOptimizer = useCallback(async () => {
     setLoading(true); setAnalysis(null);
     try {
-      const res  = await fetch('/api/backtest/optimize', {
+      const res  = await apiFetch('/api/backtest/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol: params.symbol, interval: params.interval, limit: params.limit }),
