@@ -4,7 +4,6 @@ import { sendWithButtons, esc, isEnabled } from './telegram.js';
 import { calcQuantityFromPct } from './sizeCalculator.js';
 import { TRADING_PAIRS } from '../index.js';
 import { getActivePairs } from './autoCalibrator.js';
-import { activePairs } from './autoCalibrator.js';
 
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? 15 * 60 * 1000); // default 15m
 const SCAN_TIMEFRAME   = process.env.SCAN_TIMEFRAME ?? '15m';
