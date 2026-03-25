@@ -27,7 +27,7 @@ export function stopScanner() {
 
 async function runScan() {
   const timestamp  = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-  const calibrated = getActivePairs();
+  const activePairs = getActivePairs();
 
   // Use calibrated pairs if available, otherwise fall back to all TRADING_PAIRS with default timeframe
   const pairsToScan = activePairs.length > 0
