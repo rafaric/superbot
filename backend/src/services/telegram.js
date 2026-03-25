@@ -146,6 +146,16 @@ function startPolling(handlers) {
 
   bot.on('polling_error', (err) => {
     console.error(`[Telegram] Polling error ${err.code}: ${err.message}`);
+    // ECONNRESET / EFATAL = network dropped — restart polling after delay
+    if (err.code === 'EFATAL' || err.code === 'ECONNRESET') {
+      console.log('[Telegram] Connection lost — restarting polling in 10s...');
+      bot.stopPolling().catch(() => {});
+      setTimeout(() => {
+        bot.startPolling({ params: { timeout: 10, allowed_updates: ['message', 'callback_query'] } })
+          .catch((e) => console.error('[Telegram] Restart polling error:', e.message));
+        console.log('[Telegram] Polling restarted');
+      }, 10000);
+    }
   });
 }
 

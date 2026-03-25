@@ -4,6 +4,7 @@ import { sendWithButtons, esc, isEnabled } from './telegram.js';
 import { calcQuantityFromPct } from './sizeCalculator.js';
 import { TRADING_PAIRS } from '../index.js';
 import { getActivePairs } from './autoCalibrator.js';
+import { activePairs } from './autoCalibrator.js';
 
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? 15 * 60 * 1000); // default 15m
 const SCAN_TIMEFRAME   = process.env.SCAN_TIMEFRAME ?? '15m';
@@ -26,7 +27,7 @@ export function stopScanner() {
 
 async function runScan() {
   const timestamp  = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
-  const activePairs = getActivePairs();
+  const calibrated = getActivePairs();
 
   // Use calibrated pairs if available, otherwise fall back to all TRADING_PAIRS with default timeframe
   const pairsToScan = activePairs.length > 0
@@ -118,7 +119,7 @@ async function scanPair(symbol, interval = SCAN_TIMEFRAME) {
   }
 }
 
-async function sendSignalAlert({ symbol, type, candle, ema8, ema21, vwap, rsi, relVol, orbHigh, orbLow }) {
+async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vwap, rsi, relVol, orbHigh, orbLow }) {
   if (!isEnabled()) return;
 
   const isBuy   = type === 'BUY';
