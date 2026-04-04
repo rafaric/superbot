@@ -83,6 +83,12 @@ export function validatePair(metrics) {
       maxDrawdownPct,
       expectancy,
     },
+    // PRD v2.1: Metrics by regime (placeholder — will be populated when backtester integrates regime tracking)
+    metricsByRegime: {
+      TREND: { profitFactor: null, winRate: null },
+      RANGE: { profitFactor: null, winRate: null },
+      MIXED: { profitFactor: null, winRate: null },
+    },
   };
 }
 
@@ -138,6 +144,8 @@ export async function runCalibration(allPairs) {
               expectancy:  validation.details.expectancy,
               active:      validation.passed,
               reasons:     validation.reasons,
+              // PRD v2.1: metrics by regime (placeholder)
+              metricsByRegime: validation.metricsByRegime,
             };
           } catch (err) {
             console.warn(`[Calibrator] Error ${symbol} ${interval}:`, err.message);
@@ -146,6 +154,11 @@ export async function runCalibration(allPairs) {
               trades: 0, winRate: 0, pnl: 0, pf: null, drawdown: 0, expectancy: 0,
               active: false,
               reasons: ['Error en backtest'],
+              metricsByRegime: {
+                TREND: { profitFactor: null, winRate: null },
+                RANGE: { profitFactor: null, winRate: null },
+                MIXED: { profitFactor: null, winRate: null },
+              },
             };
           }
         })

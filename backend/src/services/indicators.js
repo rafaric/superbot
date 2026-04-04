@@ -202,3 +202,119 @@ export function getEMASlope(emaSeries, lookback = 3) {
   const prev    = emaSeries[emaSeries.length - 1 - lookback].value;
   return prev > 0 ? (current - prev) / prev : null;
 }
+
+// ─── ADX ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Calculate ADX (Average Directional Index) using Wilder smoothing.
+ * Returns array of { time, value } sorted chronologically.
+ * @param {Array} candles
+ * @param {number} period - default 14
+ */
+export function calculateADX(candles, period = 14) {
+  // Need at least period*2 + 1 candles for stable ADX
+  if (candles.length < period * 2 + 1) return [];
+
+  const result = [];
+
+  // Step 1: Calculate +DM, -DM, and TR for each candle (starting from index 1)
+  const dmPlus  = [];
+  const dmMinus = [];
+  const trList  = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const high     = candles[i].high;
+    const low      = candles[i].low;
+    const prevHigh = candles[i - 1].high;
+    const prevLow  = candles[i - 1].low;
+    const prevClose = candles[i - 1].close;
+
+    // Directional Movement
+    const upMove   = high - prevHigh;
+    const downMove = prevLow - low;
+
+    let plusDM  = 0;
+    let minusDM = 0;
+
+    if (upMove > downMove && upMove > 0) {
+      plusDM = upMove;
+    }
+    if (downMove > upMove && downMove > 0) {
+      minusDM = downMove;
+    }
+
+    dmPlus.push(plusDM);
+    dmMinus.push(minusDM);
+
+    // True Range
+    const tr = Math.max(
+      high - low,
+      Math.abs(high - prevClose),
+      Math.abs(low - prevClose)
+    );
+    trList.push(tr);
+  }
+
+  // Step 2: Wilder smoothing for +DM, -DM, TR (first period = simple sum)
+  let smoothedPlusDM  = dmPlus.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothedMinusDM = dmMinus.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothedTR      = trList.slice(0, period).reduce((a, b) => a + b, 0);
+
+  // Step 3: Calculate +DI, -DI, DX series
+  const dxList = [];
+
+  // First DI values at index period-1 of dmPlus (which corresponds to candle index period)
+  let plusDI  = smoothedTR > 0 ? (smoothedPlusDM / smoothedTR) * 100 : 0;
+  let minusDI = smoothedTR > 0 ? (smoothedMinusDM / smoothedTR) * 100 : 0;
+  let diSum   = plusDI + minusDI;
+  let dx      = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+  dxList.push(dx);
+
+  // Continue Wilder smoothing for remaining candles
+  for (let i = period; i < dmPlus.length; i++) {
+    smoothedPlusDM  = smoothedPlusDM - (smoothedPlusDM / period) + dmPlus[i];
+    smoothedMinusDM = smoothedMinusDM - (smoothedMinusDM / period) + dmMinus[i];
+    smoothedTR      = smoothedTR - (smoothedTR / period) + trList[i];
+
+    plusDI  = smoothedTR > 0 ? (smoothedPlusDM / smoothedTR) * 100 : 0;
+    minusDI = smoothedTR > 0 ? (smoothedMinusDM / smoothedTR) * 100 : 0;
+    diSum   = plusDI + minusDI;
+    dx      = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+    dxList.push(dx);
+  }
+
+  // Step 4: ADX = Wilder smoothed DX
+  if (dxList.length < period) return [];
+
+  // First ADX = simple average of first `period` DX values
+  let adx = dxList.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+  // The first ADX corresponds to candle index: 1 + period-1 + period-1 = period*2 - 1
+  // But we have dmPlus starting at candle 1, so:
+  // dxList[0] corresponds to candle[period]
+  // dxList[period-1] corresponds to candle[period*2-1]
+  // First ADX is at candle index period*2 - 1
+  const firstADXCandleIdx = period * 2;
+  result.push({ time: candles[firstADXCandleIdx].time, value: adx });
+
+  // Wilder smoothing for remaining ADX values
+  for (let i = period; i < dxList.length; i++) {
+    adx = (adx * (period - 1) + dxList[i]) / period;
+    const candleIdx = period + 1 + i; // offset: dmPlus starts at candle 1, dxList[i] maps to candle[period + i]
+    if (candleIdx < candles.length) {
+      result.push({ time: candles[candleIdx].time, value: adx });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Returns the last ADX value or null if not enough data.
+ * @param {Array} candles
+ * @param {number} period - default 14
+ */
+export function getLastADX(candles, period = 14) {
+  const series = calculateADX(candles, period);
+  return series.length > 0 ? series[series.length - 1].value : null;
+}

@@ -1,36 +1,40 @@
 /**
- * BTC Trend Engine — Fase 1 (PRD v2 §3)
+ * BTC Trend Engine — PRD v2.1
  *
  * Calcula el régimen macro del mercado usando BTC-USDT en 1H.
  * Recalcula al cierre de cada vela 1H (scheduler interno).
  *
- * Régimen posible: 'bullish' | 'bearish' | 'lateral'
+ * Régimen posible: 'TREND' | 'RANGE' | 'MIXED'
  *
- * Reglas (PRD §3.1.4):
- *   Bullish  → price > EMA50 AND EMA50 > EMA200 AND slope > 0
- *   Bearish  → price < EMA50 AND EMA50 < EMA200 AND slope < 0
- *   Lateral  → todo lo demás (EMA50 ≈ EMA200, slope ≈ 0, ATR bajo)
+ * Reglas (PRD v2.1):
+ *   TREND → ADX > 22 AND distancia EMA% > 0.8% AND ATR actual > ATR avg20
+ *   RANGE → ADX < 18 AND distancia EMA% < 0.4% AND ATR actual < ATR avg20
+ *   MIXED → todo lo demás
  */
 
 import { getKlines } from './bingx.js';
-import { calculateEMA, calculateATR, getEMASlope } from './indicators.js';
+import { calculateEMA, calculateATR, calculateADX } from './indicators.js';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const BTC_SYMBOL   = 'BTC-USDT';
 const INTERVAL_1H  = '1h';
-const CANDLES_NEEDED = 300; // PRD §3.1.3
+const CANDLES_NEEDED = 300; // PRD: need ~72 candles min, but 300 for EMA200 stability
 
-// Thresholds (tunable via env)
-const SLOPE_THRESHOLD = parseFloat(process.env.BTC_SLOPE_THRESHOLD ?? 0.001); // 0.1%
-const ATR_LATERAL_MAX = parseFloat(process.env.BTC_ATR_LATERAL_MAX ?? 1.5);   // ATR% < 1.5% = baja volatilidad
+// ADX thresholds (PRD v2.1)
+const ADX_TREND_MIN = parseFloat(process.env.BTC_ADX_TREND_MIN ?? 22);
+const ADX_RANGE_MAX = parseFloat(process.env.BTC_ADX_RANGE_MAX ?? 18);
+
+// EMA distance thresholds (as ratio of price)
+const EMA_DIST_TREND_MIN = parseFloat(process.env.BTC_EMA_DIST_TREND ?? 0.008); // 0.8%
+const EMA_DIST_RANGE_MAX = parseFloat(process.env.BTC_EMA_DIST_RANGE ?? 0.004); // 0.4%
 
 // Recalculation interval: top of every hour + small buffer (ms)
 const RECALC_INTERVAL_MS = 60 * 60 * 1000; // 1h
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-/** @type {{ regime: 'bullish'|'bearish'|'lateral', ema50: number, ema200: number, slope: number, atrPct: number, price: number, updatedAt: number } | null} */
+/** @type {{ regime: 'TREND'|'RANGE'|'MIXED', adx: number, ema50: number, ema200: number, emaDist: number, atr: number, atrAvg20: number, price: number, updatedAt: number } | null} */
 let currentState = null;
 let schedulerTimer = null;
 
@@ -38,7 +42,7 @@ let schedulerTimer = null;
 
 /**
  * Returns the current BTC regime.
- * @returns {'bullish'|'bearish'|'lateral'|null}  null = not yet calculated
+ * @returns {'TREND'|'RANGE'|'MIXED'|null}  null = not yet calculated
  */
 export function getBTCRegime() {
   return currentState?.regime ?? null;
@@ -63,9 +67,11 @@ export async function recalcBTCTrend() {
       return null;
     }
 
+    // Calculate indicators
     const ema50Series  = calculateEMA(candles, 50);
     const ema200Series = calculateEMA(candles, 200);
     const atrSeries    = calculateATR(candles, 14);
+    const adxSeries    = calculateADX(candles, 14);
 
     if (!ema50Series.length || !ema200Series.length) {
       console.warn('[BtcTrendEngine] EMA calculation returned empty series');
@@ -76,19 +82,25 @@ export async function recalcBTCTrend() {
     const ema200 = ema200Series[ema200Series.length - 1].value;
     const price  = candles[candles.length - 1].close;
 
-    // Normalized slope over last 3 bars
-    const slope  = getEMASlope(ema50Series, 3) ?? 0;
+    // ADX
+    const adx = adxSeries.length > 0 ? adxSeries[adxSeries.length - 1].value : 0;
 
-    // ATR% for lateral detection
-    const lastATR = atrSeries.length ? atrSeries[atrSeries.length - 1].value : 0;
-    const atrPct  = price > 0 ? (lastATR / price) * 100 : 0;
+    // EMA distance as ratio of price
+    const emaDist = Math.abs(ema50 - ema200) / price;
 
-    const regime = determineRegime({ price, ema50, ema200, slope, atrPct });
+    // ATR current vs ATR avg20
+    const atr = atrSeries.length > 0 ? atrSeries[atrSeries.length - 1].value : 0;
+    const atrLast20 = atrSeries.slice(-20);
+    const atrAvg20 = atrLast20.length > 0
+      ? atrLast20.reduce((sum, a) => sum + a.value, 0) / atrLast20.length
+      : atr;
 
-    currentState = { regime, ema50, ema200, slope, atrPct, price, updatedAt: Date.now() };
+    const regime = determineRegime({ adx, emaDist, atr, atrAvg20 });
+
+    currentState = { regime, adx, ema50, ema200, emaDist, atr, atrAvg20, price, updatedAt: Date.now() };
 
     console.log(
-      `[BtcTrendEngine] Regime: ${regime.toUpperCase()} | BTC: ${price.toFixed(2)} | EMA50: ${ema50.toFixed(2)} | EMA200: ${ema200.toFixed(2)} | Slope: ${(slope * 100).toFixed(3)}% | ATR%: ${atrPct.toFixed(2)}%`
+      `[BtcTrendEngine] Regime: ${regime} | BTC: ${price.toFixed(2)} | ADX: ${adx.toFixed(1)} | EMA dist: ${(emaDist * 100).toFixed(2)}% | ATR: ${atr.toFixed(2)} vs avg: ${atrAvg20.toFixed(2)}`
     );
 
     return currentState;
@@ -125,25 +137,29 @@ export function stopBTCTrendEngine() {
 // ─── Internals ────────────────────────────────────────────────────────────────
 
 /**
- * Determines market regime based on PRD rules.
+ * Determines market regime based on PRD v2.1 rules.
  *
- * @param {{ price: number, ema50: number, ema200: number, slope: number, atrPct: number }}
- * @returns {'bullish'|'bearish'|'lateral'}
+ * TREND: ADX > 22 AND emaDist > 0.8% AND ATR > ATR avg20
+ * RANGE: ADX < 18 AND emaDist < 0.4% AND ATR < ATR avg20
+ * MIXED: everything else
+ *
+ * @param {{ adx: number, emaDist: number, atr: number, atrAvg20: number }}
+ * @returns {'TREND'|'RANGE'|'MIXED'}
  */
-function determineRegime({ price, ema50, ema200, slope, atrPct }) {
-  const isBullish =
-    price > ema50 &&
-    ema50  > ema200 &&
-    slope  > SLOPE_THRESHOLD;
+function determineRegime({ adx, emaDist, atr, atrAvg20 }) {
+  const isTrend =
+    adx > ADX_TREND_MIN &&
+    emaDist > EMA_DIST_TREND_MIN &&
+    atr > atrAvg20;
 
-  const isBearish =
-    price < ema50 &&
-    ema50  < ema200 &&
-    slope  < -SLOPE_THRESHOLD;
+  const isRange =
+    adx < ADX_RANGE_MAX &&
+    emaDist < EMA_DIST_RANGE_MAX &&
+    atr < atrAvg20;
 
-  if (isBullish) return 'bullish';
-  if (isBearish) return 'bearish';
-  return 'lateral';
+  if (isTrend) return 'TREND';
+  if (isRange) return 'RANGE';
+  return 'MIXED';
 }
 
 /**

@@ -110,6 +110,12 @@ export async function runBacktest({
           pnlPct:     parseFloat(netPnlPct.toFixed(4)),
           rsiAtEntry: position.rsiAtEntry,
           volAtEntry: position.volAtEntry,
+          // PRD v2.1: regime and pairScorer fields (placeholder — future integration)
+          regime:           null,
+          pairScore:        null,
+          relativeMomentum: null,
+          volumeExpansion:  null,
+          breakoutStrength: null,
         });
 
         position  = null;

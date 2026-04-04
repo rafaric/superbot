@@ -47,15 +47,16 @@ async function runScan() {
     return;
   }
 
-  if (btcRegime === 'lateral') {
-    console.log('[Scanner] BTC lateral — activando Rotation Mode');
+  // RANGE regime → activate Rotation Mode
+  if (btcRegime === 'RANGE') {
+    console.log('[Scanner] BTC RANGE — activando Rotation Mode');
     await runRotationScan();
     return;
   }
 
-  console.log(`[Scanner] Running scan at ${timestamp} — regime: ${btcRegime.toUpperCase()} | ${activePairs?.length ?? TRADING_PAIRS.length} pairs`);
+  console.log(`[Scanner] Running scan at ${timestamp} — regime: ${btcRegime} | ${activePairs?.length ?? TRADING_PAIRS.length} pairs`);
   if (trendState) {
-    console.log(`[Scanner] BTC EMA50: ${trendState.ema50.toFixed(2)} | EMA200: ${trendState.ema200.toFixed(2)} | Slope: ${(trendState.slope * 100).toFixed(3)}%`);
+    console.log(`[Scanner] BTC ADX: ${trendState.adx.toFixed(1)} | EMA dist: ${(trendState.emaDist * 100).toFixed(2)}% | ATR: ${trendState.atr.toFixed(2)} vs avg: ${trendState.atrAvg20.toFixed(2)}`);
   }
 
   // Use calibrated pairs if available, otherwise fall back to all TRADING_PAIRS with default timeframe
@@ -115,11 +116,12 @@ async function scanPair(symbol, interval = SCAN_TIMEFRAME, btcRegime = null) {
     const condORBup   = orb  && last.close > orb.orbHigh;
     const condORBdown = orb  && last.close < orb.orbLow;
 
-    // ── Fase 1: BTC Macro Filter ────────────────────────────────────────────
-    // Bullish regime → only allow BUY signals
-    // Bearish regime → only allow SELL signals
-    const buyAllowed  = !btcRegime || btcRegime === 'bullish';
-    const sellAllowed = !btcRegime || btcRegime === 'bearish';
+    // ── PRD v2.1: BTC Macro Filter ────────────────────────────────────────────
+    // TREND regime → allow both LONG and SHORT signals
+    // MIXED regime → allow both LONG and SHORT signals
+    // RANGE regime → handled above (Rotation Mode, scan doesn't reach here)
+    const buyAllowed  = true;  // In TREND/MIXED, both directions allowed
+    const sellAllowed = true;
 
     const condBuy  = buyAllowed  && condEMABuy  && condRSIup   && condVol && condORBup;
     const condSell = sellAllowed && condEMASell && condRSIdown  && condVol && condORBdown;
@@ -188,8 +190,8 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
   const RSI_UP      = parseFloat(process.env.RSI_UP      ?? 55);
   const RSI_DOWN    = parseFloat(process.env.RSI_DOWN    ?? 45);
 
-  const regimeEmoji = btcRegime === 'bullish' ? '🐂' : btcRegime === 'bearish' ? '🐻' : '➡️';
-  const regimeLabel = btcRegime ? btcRegime.toUpperCase() : 'UNKNOWN';
+  const regimeEmoji = btcRegime === 'TREND' ? '📈' : btcRegime === 'RANGE' ? '📊' : '🔀';
+  const regimeLabel = btcRegime ?? 'UNKNOWN';
 
   // HTML format — only & < > need escaping, everything else is literal
   const msg = [
@@ -216,7 +218,7 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
     isBuy
       ? `ORB High: <code>${esc(orbHigh != null ? orbHigh.toFixed(2) : 'N/A')}</code> precio sobre ORB ✅`
       : `ORB Low: <code>${esc(orbLow != null ? orbLow.toFixed(2) : 'N/A')}</code> precio bajo ORB ✅`,
-    `BTC Macro: ${esc(regimeLabel)} ${isBuy ? '→ solo LONGS ✅' : '→ solo SHORTS ✅'}`,
+    `BTC Macro: ${esc(regimeLabel)} → ambas direcciones ✅`,
     ``,
     `🎯 <b>Sugerencia:</b>`,
     `Entrada: <code>${esc(price.toFixed(2))}</code>`,
