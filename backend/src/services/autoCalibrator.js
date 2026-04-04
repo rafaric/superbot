@@ -13,6 +13,7 @@ const VALIDATION_GATE = {
 
 // Active pairs stored in memory — scanner reads this
 let activePairs = [];
+let allCalibrationResults = []; // todos los resultados (activos + rechazados)
 let lastCalibration = null;
 
 /**
@@ -93,7 +94,21 @@ export function validatePair(metrics) {
 }
 
 export function getActivePairs() {
-  return activePairs.length > 0 ? activePairs : null; // null = use all pairs (fallback)
+  // Si hay pares activos que pasaron el gate, usarlos
+  if (activePairs.length > 0) return activePairs;
+
+  // Fallback PRD §12: TOP 3 por PnL histórico (nunca usar todos los pares)
+  if (allCalibrationResults.length > 0) {
+    const top3 = allCalibrationResults
+      .filter((r) => r.trades > 0)          // descartar errores
+      .sort((a, b) => b.pnl - a.pnl)        // ordenar por PnL desc
+      .slice(0, 3);                          // top 3
+    console.log(`[Calibrator] Fallback TOP 3: ${top3.map((r) => `${r.symbol} ${r.interval}`).join(', ')}`);
+    return top3;
+  }
+
+  // Sin calibración todavía — retornar null solo en este caso extremo
+  return null;
 }
 
 export function getLastCalibration() {
@@ -175,6 +190,7 @@ export async function runCalibration(allPairs) {
     .sort((a, b) => b.pnl - a.pnl);
 
   activePairs = active;
+  allCalibrationResults = results; // guardar para fallback TOP 3
   lastCalibration = Date.now();
 
   // Log summary
@@ -198,7 +214,7 @@ export async function runCalibration(allPairs) {
 
     if (active.length === 0) {
       lines.push(`⚠️ Ningún par cumple los criterios del gate.`);
-      lines.push(`El scanner usará todos los pares como fallback.`);
+      lines.push(`El scanner usará TOP 3 por PnL como fallback.`);
     } else {
       lines.push(`<b>Activos:</b>`);
       active.slice(0, 8).forEach((r) => {

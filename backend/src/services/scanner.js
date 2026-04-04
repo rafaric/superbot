@@ -54,15 +54,17 @@ async function runScan() {
     return;
   }
 
-  console.log(`[Scanner] Running scan at ${timestamp} — regime: ${btcRegime} | ${activePairs?.length ?? TRADING_PAIRS.length} pairs`);
+  console.log(`[Scanner] Running scan at ${timestamp} — regime: ${btcRegime} | ${activePairs?.length ?? 0} pairs`);
   if (trendState) {
     console.log(`[Scanner] BTC ADX: ${trendState.adx.toFixed(1)} | EMA dist: ${(trendState.emaDist * 100).toFixed(2)}% | ATR: ${trendState.atr.toFixed(2)} vs avg: ${trendState.atrAvg20.toFixed(2)}`);
   }
 
-  // Use calibrated pairs if available, otherwise fall back to all TRADING_PAIRS with default timeframe
-  const pairsToScan = activePairs?.length > 0
-    ? activePairs
-    : TRADING_PAIRS.map((symbol) => ({ symbol, interval: SCAN_TIMEFRAME }));
+  // PRD §12: sin fallback global. Si no hay pares calibrados ni TOP 3, no escanear.
+  if (!activePairs || activePairs.length === 0) {
+    console.log('[Scanner] No hay pares calibrados disponibles — saltando scan');
+    return;
+  }
+  const pairsToScan = activePairs;
 
   const CONCURRENCY = 4;
   for (let i = 0; i < pairsToScan.length; i += CONCURRENCY) {
