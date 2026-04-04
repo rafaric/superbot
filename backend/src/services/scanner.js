@@ -1,6 +1,7 @@
 import { getKlines } from './bingx.js';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateRelativeVolume, calculateORB } from './indicators.js';
 import { send, sendWithButtons, esc, isEnabled } from './telegram.js';
+import { openTrade } from './tradeJournal.js';
 import { calcQuantityFromPct } from './sizeCalculator.js';
 import { TRADING_PAIRS } from '../index.js';
 import { getActivePairs } from './autoCalibrator.js';
@@ -259,6 +260,16 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
     [{ text: `${isBuy ? '✅' : '🔴'} Ejecutar ${action} (${ORDER_QTY} ${symbol.split('-')[0]})`, callback_data: cbData }],
     [{ text: '❌ Ignorar', callback_data: 'ignore' }],
   ]);
+
+  // Registrar en el journal de simulación
+  openTrade({
+    symbol,
+    interval,
+    side:       type,
+    entryPrice: price,
+    sl:         parseFloat(slPrice),
+    tp:         parseFloat(tpPrice),
+  });
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

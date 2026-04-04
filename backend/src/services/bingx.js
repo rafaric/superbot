@@ -225,3 +225,15 @@ export async function getTickers24h() {
   if (data.code !== 0) throw new Error(`BingX error: ${data.msg}`);
   return Array.isArray(data.data) ? data.data : [];
 }
+
+/**
+ * Fetch the current mark price for a single symbol.
+ * Returns a number (the mark price) or throws on error.
+ */
+export async function getMarkPrice(symbol) {
+  const data = await publicGet('/openApi/swap/v2/quote/premiumIndex', { symbol });
+  if (data.code !== 0) throw new Error(`BingX getMarkPrice error: ${data.msg}`);
+  const price = parseFloat(data.data?.markPrice ?? data.data?.price ?? 0);
+  if (!price) throw new Error(`BingX getMarkPrice: no price for ${symbol}`);
+  return price;
+}

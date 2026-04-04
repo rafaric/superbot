@@ -19,6 +19,7 @@ import { startScanner }         from './services/scanner.js';
 import { startBTCTrendEngine } from './services/btcTrendEngine.js';
 import { startAdaptiveATR }    from './services/adaptiveATR.js';
 import { runCalibration, scheduleDailyCalibration } from './services/autoCalibrator.js';
+import { startJournal }        from './services/tradeJournal.js';
 
 
 const app  = express();
@@ -181,6 +182,7 @@ setTimeout(async () => {
   await runCalibration(TRADING_PAIRS);
   startScanner();
   scheduleDailyCalibration(TRADING_PAIRS);
+  startJournal();                    // Trade journal simulado: polling SL/TP + resumen diario
 }, 3000);
 
 server.listen(PORT, () => {
