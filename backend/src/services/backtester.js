@@ -2,6 +2,22 @@ import { getKlinesPaginated } from './bingx.js';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateRelativeVolume, calculateORB } from './indicators.js';
 
 /**
+ * Returns candle requirements for a given timeframe.
+ * Evaluation window is fixed per timeframe; warmup candles are extra for indicator stability.
+ *
+ * @param {string} timeframe - e.g. '5m', '15m', '1h'
+ * @returns {{ totalCandles: number, evaluationCandles: number, warmupCandles: number }}
+ */
+export function getRequiredCandles(timeframe) {
+  const config = {
+    '5m':  { totalCandles: 8840, evaluationCandles: 8640, warmupCandles: 200 },
+    '15m': { totalCandles: 3080, evaluationCandles: 2880, warmupCandles: 200 },
+    '1h':  { totalCandles: 1640, evaluationCandles: 1440, warmupCandles: 200 },
+  };
+  return config[timeframe] ?? { totalCandles: 1700, evaluationCandles: 1500, warmupCandles: 200 };
+}
+
+/**
  * Runs a backtest of the full strategy over historical data.
  *
  * Strategy:
@@ -14,7 +30,7 @@ import { calculateEMA, calculateVWAP, calculateRSI, calculateRelativeVolume, cal
 export async function runBacktest({
   symbol     = 'BTC-USDT',
   interval   = '5m',
-  limit      = 500,         // candles to test on
+  limit      = null,        // if null, uses getRequiredCandles(interval).evaluationCandles
   rsiUp      = 55,
   rsiDown    = 45,
   volMin     = 1.2,
@@ -23,9 +39,15 @@ export async function runBacktest({
   feePct     = 0.05,        // 0.05% taker fee per side
 } = {}) {
 
-  // Fetch enough candles (extra 50 for indicator warmup)
-  const candles = await getKlinesPaginated({ symbol, interval, limit: limit + 50 });
-  if (candles.length < 50) throw new Error('Not enough historical data');
+  // Resolve candle counts — use dynamic policy unless caller overrides
+  const candleReq = getRequiredCandles(interval);
+  const warmupCandles    = candleReq.warmupCandles;
+  const evaluationCandles = limit ?? candleReq.evaluationCandles;
+  const totalToFetch     = evaluationCandles + warmupCandles;
+
+  // Fetch all candles (evaluation + warmup)
+  const candles = await getKlinesPaginated({ symbol, interval, limit: totalToFetch });
+  if (candles.length < warmupCandles + 50) throw new Error('Not enough historical data');
 
   // Calculate all indicators
   const ema8Series   = calculateEMA(candles, 8);
@@ -47,11 +69,9 @@ export async function runBacktest({
   let   position = null;  // { type, entry, sl, tp, entryTime, entryIndex }
   let   prevCond = { buy: false, sell: false };
 
-  // Use only the last `limit` candles for the actual test
-  const testCandles = candles.slice(-limit);
-
-  for (let i = 0; i < testCandles.length; i++) {
-    const c = testCandles[i];
+  // Start from warmupCandles — indicators are stable by then, warmup candles are NOT evaluated
+  for (let i = warmupCandles; i < candles.length; i++) {
+    const c = candles[i];
 
     const ema8   = ema8Map.get(c.time);
     const ema21  = ema21Map.get(c.time);
@@ -153,7 +173,7 @@ export async function runBacktest({
   }
 
   return {
-    params: { symbol, interval, limit, rsiUp, rsiDown, volMin, slRatio, tpRatio, feePct },
+    params: { symbol, interval, evaluationCandles, warmupCandles, rsiUp, rsiDown, volMin, slRatio, tpRatio, feePct },
     metrics: {
       totalTrades:     trades.length,
       wins:            wins.length,

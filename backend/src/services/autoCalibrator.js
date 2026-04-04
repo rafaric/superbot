@@ -1,10 +1,8 @@
-import { runBacktest } from './backtester.js';
+import { runBacktest, getRequiredCandles } from './backtester.js';
 import { send, esc, isEnabled } from './telegram.js';
 
 // Timeframes to evaluate
 const CANDIDATE_TIMEFRAMES = ['5m', '15m', '1h'];
-
-// PRD §8 Validation Gate — strict acceptance criteria
 const VALIDATION_GATE = {
   minTrades:        150,    // Minimum trades for statistical significance
   minProfitFactor:  1.35,   // PF >= 1.35 (null = infinite = passes)
@@ -12,9 +10,6 @@ const VALIDATION_GATE = {
   minWinRate:       36,     // Win rate >= 36%
   minExpectancy:    0,      // Expectancy > 0 (must be positive)
 };
-
-// 1500 candles needed to generate enough trades for the 150-trade gate
-const CANDLES_TO_TEST = 1500;
 
 // Active pairs stored in memory — scanner reads this
 let activePairs = [];
@@ -106,6 +101,10 @@ export function getLastCalibration() {
 export async function runCalibration(allPairs) {
   console.log(`[Calibrator] Starting calibration — ${allPairs.length} pairs × ${CANDIDATE_TIMEFRAMES.length} timeframes`);
   console.log(`[Calibrator] Validation gate: Trades≥${VALIDATION_GATE.minTrades}, PF≥${VALIDATION_GATE.minProfitFactor}, DD≤${VALIDATION_GATE.maxDrawdownPct}%, WR≥${VALIDATION_GATE.minWinRate}%, Exp>0`);
+  CANDIDATE_TIMEFRAMES.forEach((tf) => {
+    const req = getRequiredCandles(tf);
+    console.log(`[Calibrator] ${tf}: ${req.evaluationCandles} eval candles + ${req.warmupCandles} warmup = ${req.totalCandles} total`);
+  });
   if (isEnabled()) send('🔄 <b>Calibración automática iniciada</b>\nAnalizando todos los pares...');
 
   const results = [];
@@ -119,7 +118,7 @@ export async function runCalibration(allPairs) {
           try {
             const bt = await runBacktest({
               symbol, interval,
-              limit:   CANDLES_TO_TEST,
+              // limit omitted — backtester uses getRequiredCandles(interval) policy
               rsiUp:   parseFloat(process.env.RSI_UP      ?? 55),
               rsiDown: parseFloat(process.env.RSI_DOWN    ?? 45),
               volMin:  parseFloat(process.env.VOL_REL_MIN ?? 1.2),

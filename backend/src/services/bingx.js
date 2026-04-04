@@ -97,7 +97,7 @@ export async function getKlines({ symbol = 'BTC-USDT', interval = '5m', limit = 
 }
 
 const PAGINATION_DELAY_MS = 100;
-const MAX_PAGES = 5;
+const MAX_PAGES = 10; // supports up to 10000 candles (8840 needed for 5m/30d warmup)
 const MAX_PER_REQUEST = 1000;
 
 /**
