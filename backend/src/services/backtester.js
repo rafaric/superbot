@@ -1,4 +1,4 @@
-import { getKlines } from './bingx.js';
+import { getKlinesPaginated } from './bingx.js';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateRelativeVolume, calculateORB } from './indicators.js';
 
 /**
@@ -24,7 +24,7 @@ export async function runBacktest({
 } = {}) {
 
   // Fetch enough candles (extra 50 for indicator warmup)
-  const candles = await getKlines({ symbol, interval, limit: Math.min(limit + 50, 1000) });
+  const candles = await getKlinesPaginated({ symbol, interval, limit: limit + 50 });
   if (candles.length < 50) throw new Error('Not enough historical data');
 
   // Calculate all indicators

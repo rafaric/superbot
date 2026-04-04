@@ -10,17 +10,11 @@
 import { getTickers24h, getKlines } from './bingx.js';
 import { getATRPercent, getRelativeVolume } from './indicators.js';
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-const UNIVERSE_TOP_N       = parseInt(process.env.UNIVERSE_TOP_N ?? 30);
-const ATR_PCT_MIN          = parseFloat(process.env.ATR_PCT_MIN ?? 0.35);
-const VOL_RATIO_MIN        = parseFloat(process.env.VOL_RATIO_MIN ?? 1.2);
-const UNIVERSE_CACHE_TTL_MS = parseInt(process.env.UNIVERSE_CACHE_TTL_MS ?? 15 * 60 * 1000); // 15 min
-
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
 let cachedUniverse = null;
 let cacheTimestamp = 0;
+let lastAtrPctMin = null; // Track threshold changes to invalidate cache
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -32,8 +26,16 @@ let cacheTimestamp = 0;
  */
 export async function getDynamicUniverse() {
   const now = Date.now();
+  const cacheTtl = parseInt(process.env.UNIVERSE_CACHE_TTL_MS ?? 15 * 60 * 1000);
+  const atrPctMin = parseFloat(process.env.ATR_PCT_MIN ?? 0.35);
 
-  if (cachedUniverse && (now - cacheTimestamp) < UNIVERSE_CACHE_TTL_MS) {
+  // Invalidate cache if threshold changed (AdaptiveATR updates this hourly)
+  const thresholdChanged = lastAtrPctMin !== null && lastAtrPctMin !== atrPctMin;
+  if (thresholdChanged) {
+    console.log(`[DynamicUniverse] ATR threshold changed (${lastAtrPctMin} → ${atrPctMin}), invalidating cache`);
+  }
+
+  if (cachedUniverse && (now - cacheTimestamp) < cacheTtl && !thresholdChanged) {
     console.log(`[DynamicUniverse] Returning cached universe (${cachedUniverse.length} pairs)`);
     return cachedUniverse;
   }
@@ -48,6 +50,11 @@ export async function getDynamicUniverse() {
  */
 export async function refreshUniverse() {
   console.log('[DynamicUniverse] Refreshing universe...');
+
+  // Read config at runtime (AdaptiveATR updates thresholds dynamically)
+  const universeTopN = parseInt(process.env.UNIVERSE_TOP_N ?? 30);
+  const atrPctMin = parseFloat(process.env.ATR_PCT_MIN ?? 0.35);
+  const volRatioMin = parseFloat(process.env.VOL_RATIO_MIN ?? 1.2);
 
   try {
     // Step 1: Fetch all 24h tickers
@@ -67,8 +74,8 @@ export async function refreshUniverse() {
       .sort((a, b) => b.quoteVolume - a.quoteVolume);
 
     // Step 4: Take top N
-    const topN = sorted.slice(0, UNIVERSE_TOP_N);
-    console.log(`[DynamicUniverse] Top ${UNIVERSE_TOP_N} by volume: ${topN.slice(0, 5).map(p => p.symbol).join(', ')}...`);
+    const topN = sorted.slice(0, universeTopN);
+    console.log(`[DynamicUniverse] Top ${universeTopN} by volume: ${topN.slice(0, 5).map(p => p.symbol).join(', ')}...`);
 
     // Step 5: For each pair, calculate ATR% and volRatio via klines 5m
     const CONCURRENCY = 4;
@@ -111,18 +118,19 @@ export async function refreshUniverse() {
       }
     }
 
-    // Step 6: Filter by ATR% and volRatio thresholds
+    // Step 6: Filter by ATR% and volRatio thresholds (read dynamically — AdaptiveATR updates these)
     const filtered = enriched.filter(
-      (p) => p.atrPct > ATR_PCT_MIN && p.volRatio > VOL_RATIO_MIN
+      (p) => p.atrPct > atrPctMin && p.volRatio > volRatioMin
     );
 
     console.log(
-      `[DynamicUniverse] Filtered ${filtered.length}/${enriched.length} pairs (ATR% > ${ATR_PCT_MIN}, volRatio > ${VOL_RATIO_MIN})`
+      `[DynamicUniverse] Filtered ${filtered.length}/${enriched.length} pairs (ATR% > ${atrPctMin}, volRatio > ${volRatioMin})`
     );
 
-    // Update cache
+    // Update cache and track threshold for invalidation
     cachedUniverse = filtered;
     cacheTimestamp = Date.now();
+    lastAtrPctMin = atrPctMin;
 
     return filtered;
   } catch (err) {

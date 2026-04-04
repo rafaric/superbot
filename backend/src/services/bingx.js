@@ -1,9 +1,9 @@
 import { buildAuthQuery } from '../utils/auth.js';
 
 // Read dynamically on every call so environment switches take effect immediately
-const getBaseUrl = () => process.env.BINGX_BASE_URL;
-const getApiKey  = () => process.env.BINGX_API_KEY;
-const getSecret  = () => process.env.BINGX_API_SECRET;
+const getBaseUrl = () => process.env.BINGX_BASE_URL ?? '';
+const getApiKey  = () => process.env.BINGX_API_KEY ?? '';
+const getSecret  = () => process.env.BINGX_API_SECRET ?? '';
 
 /**
  * Generic public GET request to BingX.
@@ -94,6 +94,80 @@ export async function getKlines({ symbol = 'BTC-USDT', interval = '5m', limit = 
     .sort((a, b) => a.time - b.time); // ensure chronological order
 
   return candles;
+}
+
+const PAGINATION_DELAY_MS = 100;
+const MAX_PAGES = 5;
+const MAX_PER_REQUEST = 1000;
+
+/**
+ * Fetch K-lines with pagination support for limits > 1000.
+ * BingX caps at 1000 candles per request, so we paginate backwards using endTime.
+ *
+ * @param {string} symbol   e.g. "BTC-USDT"
+ * @param {string} interval e.g. "5m", "1h"
+ * @param {number} limit    number of candles (no cap, but safety max of 5000)
+ */
+export async function getKlinesPaginated({ symbol = 'BTC-USDT', interval = '5m', limit = 200 } = {}) {
+  // Fast path: no pagination needed
+  if (limit <= MAX_PER_REQUEST) {
+    return getKlines({ symbol, interval, limit });
+  }
+
+  const effectiveLimit = Math.min(limit, MAX_PER_REQUEST * MAX_PAGES); // safety cap: 5000
+  const allCandles = [];
+  let endTime = undefined;
+  let pagesLoaded = 0;
+
+  console.log(`[BingX] Fetching ${effectiveLimit} candles with pagination (${Math.ceil(effectiveLimit / MAX_PER_REQUEST)} pages max)`);
+
+  while (allCandles.length < effectiveLimit && pagesLoaded < MAX_PAGES) {
+    const batchLimit = Math.min(MAX_PER_REQUEST, effectiveLimit - allCandles.length);
+    const batch = await getKlines({ symbol, interval, limit: batchLimit, endTime });
+
+    if (batch.length === 0) {
+      console.log(`[BingX] No more data at page ${pagesLoaded + 1}`);
+      break;
+    }
+
+    pagesLoaded++;
+    console.log(`[BingX] Page ${pagesLoaded}: fetched ${batch.length} candles`);
+
+    // Merge batch into allCandles
+    allCandles.push(...batch);
+
+    // Set endTime for next page: oldest candle timestamp - 1ms
+    // batch[0] is the oldest since getKlines sorts chronologically
+    const oldestTimeMs = batch[0].time * 1000;
+    endTime = oldestTimeMs - 1;
+
+    // Stop if we got fewer candles than requested (no more historical data)
+    if (batch.length < batchLimit) {
+      break;
+    }
+
+    // Delay between requests to avoid hammering the API
+    if (pagesLoaded < MAX_PAGES && allCandles.length < effectiveLimit) {
+      await new Promise((resolve) => setTimeout(resolve, PAGINATION_DELAY_MS));
+    }
+  }
+
+  // Deduplicate by time (in case of overlap)
+  const seen = new Set();
+  const deduped = [];
+  for (const c of allCandles) {
+    if (!seen.has(c.time)) {
+      seen.add(c.time);
+      deduped.push(c);
+    }
+  }
+
+  // Sort chronologically and return the last `limit` candles
+  deduped.sort((a, b) => a.time - b.time);
+  const result = deduped.slice(-effectiveLimit);
+
+  console.log(`[BingX] Pagination complete: ${result.length} candles total`);
+  return result;
 }
 
 /**
