@@ -16,3 +16,8 @@
 - Single quotes for strings in code (JSDoc comments are exempt)
 - 2-space indentation
 - Named exports, no default exports
+
+## Language
+- Code comments and console log messages may be in Spanish or English — both are acceptable
+- Telegram message strings are intentionally in Spanish for end users — do NOT flag as violations
+- Do NOT invent rules that are not listed above

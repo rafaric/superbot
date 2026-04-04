@@ -206,31 +206,39 @@ export async function runCalibration(allPairs) {
     const lines = [
       `✅ <b>Calibración completada</b>`,
       `─────────────────────`,
-      `<b>Gate PRD §8:</b> Trades≥${gate.minTrades} | PF≥${gate.minProfitFactor} | DD≤${gate.maxDrawdownPct}% | WR≥${gate.minWinRate}% | Exp>0`,
+      `<b>Gate PRD §8:</b>`,
+      `Trades≥${gate.minTrades} | PF≥${gate.minProfitFactor} | DD≤${gate.maxDrawdownPct}% | WR≥${gate.minWinRate}% | Exp>0`,
       ``,
-      `Pares activos: <b>${active.length}</b> de ${results.length} combinaciones`,
-      ``,
+      `Universo analizado: <b>${results.length}</b> combinaciones`,
+      `Pares que pasan gate: <b>${active.length}</b>`,
     ];
 
     if (active.length === 0) {
-      lines.push(`⚠️ Ningún par cumple los criterios del gate.`);
-      lines.push(`El scanner usará TOP 3 por PnL como fallback.`);
-    } else {
-      lines.push(`<b>Activos:</b>`);
-      active.slice(0, 8).forEach((r) => {
-        lines.push(`• ${esc(r.symbol)} ${r.interval} — PnL: <code>${r.pnl >= 0 ? '+' : ''}${r.pnl.toFixed(2)}%</code> WR: <code>${r.winRate.toFixed(1)}%</code> PF: <code>${r.pf?.toFixed(2) ?? '∞'}</code>`);
-      });
-    }
+      // Fallback: TOP 3 por score histórico
+      const top3 = allCalibrationResults
+        .filter((r) => r.trades > 0)
+        .sort((a, b) => b.pnl - a.pnl)
+        .slice(0, 3);
 
-    // Show rejection reasons (max 5 to avoid spam)
-    if (rejected.length > 0) {
       lines.push(``);
-      lines.push(`<b>Rechazados (${rejected.length}):</b>`);
-      rejected.slice(0, 5).forEach((r) => {
-        lines.push(`• ${esc(r.symbol)} ${r.interval} — ${r.reasons.slice(0, 3).join(', ')}`);
+      lines.push(`⚠️ Ningún par cumple los criterios del gate.`);
+      lines.push(`🔁 <b>Fallback inteligente activado</b>`);
+      lines.push(``);
+      lines.push(`<b>TOP ${top3.length} seleccionados por score histórico:</b>`);
+      top3.forEach((r) => {
+        lines.push(`• ${esc(r.symbol)} ${r.interval} — PF: <code>${r.pf?.toFixed(2) ?? '∞'}</code> | DD: <code>${r.drawdown.toFixed(1)}%</code> | WR: <code>${r.winRate.toFixed(1)}%</code>`);
       });
-      if (rejected.length > 5) {
-        lines.push(`  <i>...y ${rejected.length - 5} más</i>`);
+      lines.push(``);
+      lines.push(`🎯 Scanner operará SOLO estos ${top3.length} pares`);
+    } else {
+      // Gate passed — show active pairs
+      lines.push(``);
+      lines.push(`✅ <b>Pares activos:</b>`);
+      active.slice(0, 8).forEach((r) => {
+        lines.push(`• ${esc(r.symbol)} ${r.interval} — PnL: <code>${r.pnl >= 0 ? '+' : ''}${r.pnl.toFixed(2)}%</code> | WR: <code>${r.winRate.toFixed(1)}%</code> | PF: <code>${r.pf?.toFixed(2) ?? '∞'}</code>`);
+      });
+      if (active.length > 8) {
+        lines.push(`  <i>...y ${active.length - 8} más</i>`);
       }
     }
 

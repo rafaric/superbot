@@ -1,6 +1,6 @@
 import { getKlines } from './bingx.js';
 import { calculateEMA, calculateVWAP, calculateRSI, calculateRelativeVolume, calculateORB } from './indicators.js';
-import { sendWithButtons, esc, isEnabled } from './telegram.js';
+import { send, sendWithButtons, esc, isEnabled } from './telegram.js';
 import { calcQuantityFromPct } from './sizeCalculator.js';
 import { TRADING_PAIRS } from '../index.js';
 import { getActivePairs } from './autoCalibrator.js';
@@ -14,6 +14,7 @@ const SIGNAL_PCT       = parseFloat(process.env.SIGNAL_PCT ?? 10);
 
 const lastSignal = new Map();
 let scanTimer = null;
+let scannerStarted = false;
 
 export function startScanner() {
   if (scanTimer) return;
@@ -65,6 +66,27 @@ async function runScan() {
     return;
   }
   const pairsToScan = activePairs;
+
+  // ── First-time startup message ───────────────────────────────────────────
+  if (!scannerStarted && isEnabled()) {
+    // Detect fallback mode: if any pair has active !== true, it's fallback
+    const isFallbackMode = pairsToScan.some((p) => p.active !== true);
+    const mode = isFallbackMode
+      ? 'Fallback inteligente'
+      : 'Gate PRD §8 ✅';
+
+    const lines = [
+      `🚀 <b>Scanner iniciado</b>`,
+      `Modo: <b>${mode}</b>`,
+      `Pares monitoreados: <b>${pairsToScan.length}</b>`,
+      ``,
+    ];
+    pairsToScan.forEach((p) => {
+      lines.push(`• ${esc(p.symbol)} ${p.interval}`);
+    });
+    send(lines.join('\n'));
+    scannerStarted = true;
+  }
 
   const CONCURRENCY = 4;
   for (let i = 0; i < pairsToScan.length; i += CONCURRENCY) {
