@@ -137,3 +137,68 @@ export function getORB(candles15m) {
     : candles15m[candles15m.length - 1];
   return { high: ref.high, low: ref.low };
 }
+
+// ─── ATR ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns ATR series (Wilder smoothing).
+ * Each entry: { time, value }
+ */
+export function calculateATR(candles, period = 14) {
+  if (candles.length < period + 1) return [];
+  const result = [];
+
+  // First ATR = simple average of first `period` true ranges
+  let sum = 0;
+  for (let i = 1; i <= period; i++) {
+    const tr = Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - candles[i - 1].close),
+      Math.abs(candles[i].low  - candles[i - 1].close),
+    );
+    sum += tr;
+  }
+  let atr = sum / period;
+  result.push({ time: candles[period].time, value: atr });
+
+  // Wilder smoothing for remaining candles
+  for (let i = period + 1; i < candles.length; i++) {
+    const tr = Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - candles[i - 1].close),
+      Math.abs(candles[i].low  - candles[i - 1].close),
+    );
+    atr = (atr * (period - 1) + tr) / period;
+    result.push({ time: candles[i].time, value: atr });
+  }
+  return result;
+}
+
+/**
+ * Returns last ATR as a percentage of price (ATR%).
+ * Useful for filtering minimum volatility.
+ */
+export function getATRPercent(candles, period = 14) {
+  const series = calculateATR(candles, period);
+  if (!series.length) return null;
+  const lastATR   = series[series.length - 1].value;
+  const lastPrice = candles[candles.length - 1].close;
+  return lastPrice > 0 ? (lastATR / lastPrice) * 100 : null;
+}
+
+// ─── EMA Slope ────────────────────────────────────────────────────────────────
+
+/**
+ * Calculates the normalized slope of an EMA series.
+ * slope = (ema[last] - ema[last - lookback]) / ema[last - lookback]
+ * Returns a decimal (e.g. 0.002 = +0.2%, -0.001 = -0.1%).
+ *
+ * @param {Array}  emaSeries  Output of calculateEMA()
+ * @param {number} lookback   How many bars back to measure slope (default 3)
+ */
+export function getEMASlope(emaSeries, lookback = 3) {
+  if (emaSeries.length < lookback + 1) return null;
+  const current = emaSeries[emaSeries.length - 1].value;
+  const prev    = emaSeries[emaSeries.length - 1 - lookback].value;
+  return prev > 0 ? (current - prev) / prev : null;
+}

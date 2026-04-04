@@ -141,3 +141,13 @@ export async function setLeverage({ symbol, leverage, side = 'BOTH' }) {
   if (data.code !== 0) throw new Error(`BingX leverage error: ${data.msg}`);
   return data.data;
 }
+
+/**
+ * Fetch all perpetual futures tickers (24h stats).
+ * Used by dynamicUniverse to rank pairs by volume.
+ */
+export async function getTickers24h() {
+  const data = await publicGet('/openApi/swap/v2/quote/ticker', {});
+  if (data.code !== 0) throw new Error(`BingX error: ${data.msg}`);
+  return Array.isArray(data.data) ? data.data : [];
+}

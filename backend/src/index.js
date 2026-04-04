@@ -6,7 +6,7 @@ import marketRouter  from './routes/market.js';
 import accountRouter from './routes/account.js';
 import ordersRouter  from './routes/orders.js';
 import signalsRouter  from './routes/signals.js';
-import backtestRouter from './routes/backtest.js';
+import { router as backtestRouter } from './routes/backtest.js';
 import configRouter  from './routes/config.js';
 import { setupWSRouter }     from './ws/wsRouter.js';
 import { accountWSManager }  from './services/accountStream.js';
@@ -16,11 +16,13 @@ import { checkPnLAlerts }       from './services/telegramNotifier.js';
 import { placeOrderFromSignal }  from './services/signalTrader.js';
 import { closePositionFromTelegram } from './services/telegramTrader.js';
 import { startScanner }         from './services/scanner.js';
+import { startBTCTrendEngine } from './services/btcTrendEngine.js';
+import { startAdaptiveATR }    from './services/adaptiveATR.js';
 import { runCalibration, scheduleDailyCalibration } from './services/autoCalibrator.js';
 
 
 const app  = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT ?? 3001;
 
 // Parse TRADING_PAIRS env var — convert BTCUSDT → BTC-USDT
 export const TRADING_PAIRS = (process.env.TRADING_PAIRS ?? 'BTC-USDT')
@@ -37,7 +39,7 @@ export const TRADING_PAIRS = (process.env.TRADING_PAIRS ?? 'BTC-USDT')
     return s;
   });
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',').map(s => s.trim());
+const allowedOrigins = (process.env.FRONTEND_URL ?? 'http://localhost:5173').split(',').map(s => s.trim());
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || allowedOrigins.includes(origin)) cb(null, true);
@@ -171,18 +173,20 @@ initBot(buildCommandHandlers(indicatorsGetter), placeOrderFromSignal);
 setCloseHandler(closePositionFromTelegram);
 
 // ─── Auto-calibration + Scanner ──────────────────────────────────────────────
-// On startup: calibrate all pairs, then start scanner with active combinations.
+// On startup: start BTC trend engine first, then adaptive ATR, then calibrate all pairs, then start scanner.
 // Daily re-calibration at 3am Argentina time.
 setTimeout(async () => {
+  await startBTCTrendEngine();       // Fase 1: BTC macro filter (calculates + starts 1H scheduler)
+  await startAdaptiveATR();          // Fase 3: Adaptive ATR threshold (calculates + starts 1H scheduler)
   await runCalibration(TRADING_PAIRS);
   startScanner();
   scheduleDailyCalibration(TRADING_PAIRS);
 }, 3000);
 
 server.listen(PORT, () => {
-  console.log(`\n🚀 Backend running on http://localhost:${PORT}`);
-  console.log(`📡 BingX endpoint: ${process.env.BINGX_BASE_URL}`);
-  console.log(`🔌 WS ticks:   ws://localhost:${PORT}/ws/ticks`);
-  console.log(`💰 WS account: ws://localhost:${PORT}/ws/account`);
-  console.log(`🤖 Telegram:   ${process.env.TELEGRAM_BOT_TOKEN ? 'enabled' : 'disabled (no token)'}\n`);
+  console.log(`[Backend] 🚀 Running on http://localhost:${PORT}`);
+  console.log(`[Backend] 📡 BingX endpoint: ${process.env.BINGX_BASE_URL}`);
+  console.log(`[Backend] 🔌 WS ticks:   ws://localhost:${PORT}/ws/ticks`);
+  console.log(`[Backend] 💰 WS account: ws://localhost:${PORT}/ws/account`);
+  console.log(`[Backend] 🤖 Telegram:   ${process.env.TELEGRAM_BOT_TOKEN ? 'enabled' : 'disabled (no token)'}`);
 });

@@ -4,6 +4,9 @@ import { sendWithButtons, esc, isEnabled } from './telegram.js';
 import { calcQuantityFromPct } from './sizeCalculator.js';
 import { TRADING_PAIRS } from '../index.js';
 import { getActivePairs } from './autoCalibrator.js';
+import { getBTCRegime, getBTCTrendState } from './btcTrendEngine.js';
+import { checkPositionGuard } from './positionGuard.js';
+import { runRotationScan } from './rotationScanner.js';
 
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS ?? 15 * 60 * 1000); // default 15m
 const SCAN_TIMEFRAME   = process.env.SCAN_TIMEFRAME ?? '15m';
@@ -28,23 +31,48 @@ async function runScan() {
   const timestamp  = new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' });
   const activePairs = getActivePairs();
 
+  // ── Fase 1: Single Position Rule ─────────────────────────────────────────
+  const guard = await checkPositionGuard();
+  if (guard.blocked) {
+    console.log(`[Scanner] Skipping scan — ${guard.reason}`);
+    return;
+  }
+
+  // ── Fase 1: BTC Macro Regime ─────────────────────────────────────────────
+  const btcRegime = getBTCRegime();
+  const trendState = getBTCTrendState();
+
+  if (!btcRegime) {
+    console.warn('[Scanner] BTC regime not yet calculated — skipping scan');
+    return;
+  }
+
+  if (btcRegime === 'lateral') {
+    console.log('[Scanner] BTC lateral — activando Rotation Mode');
+    await runRotationScan();
+    return;
+  }
+
+  console.log(`[Scanner] Running scan at ${timestamp} — regime: ${btcRegime.toUpperCase()} | ${activePairs?.length ?? TRADING_PAIRS.length} pairs`);
+  if (trendState) {
+    console.log(`[Scanner] BTC EMA50: ${trendState.ema50.toFixed(2)} | EMA200: ${trendState.ema200.toFixed(2)} | Slope: ${(trendState.slope * 100).toFixed(3)}%`);
+  }
+
   // Use calibrated pairs if available, otherwise fall back to all TRADING_PAIRS with default timeframe
-  const pairsToScan = activePairs.length > 0
+  const pairsToScan = activePairs?.length > 0
     ? activePairs
     : TRADING_PAIRS.map((symbol) => ({ symbol, interval: SCAN_TIMEFRAME }));
-
-  console.log(`[Scanner] Running scan at ${timestamp} — ${pairsToScan.length} pairs`);
 
   const CONCURRENCY = 4;
   for (let i = 0; i < pairsToScan.length; i += CONCURRENCY) {
     await Promise.all(pairsToScan.slice(i, i + CONCURRENCY).map(({ symbol, interval }) =>
-      scanPair(symbol, interval)
+      scanPair(symbol, interval, btcRegime)
     ));
     if (i + CONCURRENCY < pairsToScan.length) await sleep(500);
   }
 }
 
-async function scanPair(symbol, interval = SCAN_TIMEFRAME) {
+async function scanPair(symbol, interval = SCAN_TIMEFRAME, btcRegime = null) {
   try {
     const candles15m = await getKlines({ symbol, interval, limit: 200 });
     if (candles15m.length < 22) return;
@@ -87,13 +115,19 @@ async function scanPair(symbol, interval = SCAN_TIMEFRAME) {
     const condORBup   = orb  && last.close > orb.orbHigh;
     const condORBdown = orb  && last.close < orb.orbLow;
 
-    const condBuy  = condEMABuy  && condRSIup   && condVol && condORBup;
-    const condSell = condEMASell && condRSIdown  && condVol && condORBdown;
+    // ── Fase 1: BTC Macro Filter ────────────────────────────────────────────
+    // Bullish regime → only allow BUY signals
+    // Bearish regime → only allow SELL signals
+    const buyAllowed  = !btcRegime || btcRegime === 'bullish';
+    const sellAllowed = !btcRegime || btcRegime === 'bearish';
+
+    const condBuy  = buyAllowed  && condEMABuy  && condRSIup   && condVol && condORBup;
+    const condSell = sellAllowed && condEMASell && condRSIdown  && condVol && condORBdown;
 
     const prevEMABuy   = prev.close > ema8Prev  && ema8Prev  > ema21Prev && ema21Prev > vwapPrev;
     const prevEMASell  = prev.close < ema8Prev  && ema8Prev  < ema21Prev && ema21Prev < vwapPrev;
-    const prevCondBuy  = prevEMABuy  && rsiPrev > RSI_UP   && relVolPrev > VOL_REL_MIN && orbPrev && prev.close > orbPrev.orbHigh;
-    const prevCondSell = prevEMASell && rsiPrev < RSI_DOWN  && relVolPrev > VOL_REL_MIN && orbPrev && prev.close < orbPrev.orbLow;
+    const prevCondBuy  = buyAllowed  && prevEMABuy  && rsiPrev > RSI_UP   && relVolPrev > VOL_REL_MIN && orbPrev && prev.close > orbPrev.orbHigh;
+    const prevCondSell = sellAllowed && prevEMASell && rsiPrev < RSI_DOWN  && relVolPrev > VOL_REL_MIN && orbPrev && prev.close < orbPrev.orbLow;
 
     const newBuy  = condBuy  && !prevCondBuy;
     const newSell = condSell && !prevCondSell;
@@ -110,7 +144,7 @@ async function scanPair(symbol, interval = SCAN_TIMEFRAME) {
       symbol, type: newBuy ? 'BUY' : 'SELL',
       candle: last, ema8, ema21, vwap, rsi, relVol,
       orbHigh: orb?.orbHigh, orbLow: orb?.orbLow,
-      interval,
+      interval, btcRegime,
     });
 
   } catch (err) {
@@ -118,7 +152,7 @@ async function scanPair(symbol, interval = SCAN_TIMEFRAME) {
   }
 }
 
-async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vwap, rsi, relVol, orbHigh, orbLow }) {
+async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vwap, rsi, relVol, orbHigh, orbLow, btcRegime }) {
   if (!isEnabled()) return;
 
   const isBuy   = type === 'BUY';
@@ -154,6 +188,9 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
   const RSI_UP      = parseFloat(process.env.RSI_UP      ?? 55);
   const RSI_DOWN    = parseFloat(process.env.RSI_DOWN    ?? 45);
 
+  const regimeEmoji = btcRegime === 'bullish' ? '🐂' : btcRegime === 'bearish' ? '🐻' : '➡️';
+  const regimeLabel = btcRegime ? btcRegime.toUpperCase() : 'UNKNOWN';
+
   // HTML format — only & < > need escaping, everything else is literal
   const msg = [
     `${emoji} <b>[SCANNER] Señal de ${esc(action)}</b>`,
@@ -162,6 +199,8 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
     `Dirección: <b>${esc(dir)}</b>`,
     ``,
     `💵 Precio: <code>${esc(price.toFixed(2))}</code>`,
+    ``,
+    `${regimeEmoji} <b>BTC Régimen:</b> <code>${esc(regimeLabel)}</code>`,
     ``,
     `📊 <b>Indicadores:</b>`,
     `EMA 8:  <code>${esc(ema8.toFixed(2))}</code>`,
@@ -177,6 +216,7 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
     isBuy
       ? `ORB High: <code>${esc(orbHigh != null ? orbHigh.toFixed(2) : 'N/A')}</code> precio sobre ORB ✅`
       : `ORB Low: <code>${esc(orbLow != null ? orbLow.toFixed(2) : 'N/A')}</code> precio bajo ORB ✅`,
+    `BTC Macro: ${esc(regimeLabel)} ${isBuy ? '→ solo LONGS ✅' : '→ solo SHORTS ✅'}`,
     ``,
     `🎯 <b>Sugerencia:</b>`,
     `Entrada: <code>${esc(price.toFixed(2))}</code>`,
@@ -187,7 +227,7 @@ async function sendSignalAlert({ symbol, interval, type, candle, ema8, ema21, vw
   ].join('\n');
 
   const cbData = `exec|${type}|${symbol}|${ORDER_QTY}|${price.toFixed(2)}|${slPrice}|${tpPrice}`;
-  console.log(`[Scanner] 🚨 Signal ${type} on ${symbol} @ ${price.toFixed(2)}`);
+  console.log(`[Scanner] 🚨 Signal ${type} on ${symbol} @ ${price.toFixed(2)} | BTC: ${regimeLabel}`);
 
   sendWithButtons(msg, [
     [{ text: `${isBuy ? '✅' : '🔴'} Ejecutar ${action} (${ORDER_QTY} ${symbol.split('-')[0]})`, callback_data: cbData }],
